@@ -1,0 +1,284 @@
+
+# ui/pages/process_pdfs.py
+import streamlit as st
+from services import pdf_service
+from services.tasa_service import atualizar_dataframe_tasa
+
+# -----------------------------
+# Imports protegidos (diagnóstico no app)
+# -----------------------------
+
+# Import protegido do Percepciones
+PERC_AVAILABLE = True
+PERC_ERR = None
+try:
+    from services.percepcion_service import process_percepcion_streamlit
+except Exception as e:
+    PERC_AVAILABLE = False
+    PERC_ERR = e
+
+if not PERC_AVAILABLE:
+    st.warning(
+        "Módulo **Percepciones** não pôde ser carregado. "
+        "Verifique `services/percepcion_service.py` e dependências (ex.: PyMuPDF)."
+    )
+    with st.expander("Detalhes técnicos do erro (Percepciones)"):
+        st.exception(PERC_ERR)
+
+# Import protegido do DUAS (para não “matar” o tab se faltar dependência)
+DUAS_AVAILABLE = True
+DUAS_ERR = None
+try:
+    from services.duas_service import process_duas_streamlit
+except Exception as e:
+    DUAS_AVAILABLE = False
+    DUAS_ERR = e
+
+# AVISO se o módulo DUAS não carregou (mas mantém os botões visíveis)
+if not DUAS_AVAILABLE:
+    st.warning(
+        "O módulo **DUAS** não pôde ser carregado. "
+        "Verifique `services/duas_service.py` e dependências (ex.: `pdfplumber`)."
+    )
+    with st.expander("Detalhes técnicos do erro (DUAS)"):
+        st.exception(DUAS_ERR)  # <- mostra o stack-trace real
+
+# -----------------------------
+# Utilidades
+# -----------------------------
+from io import BytesIO
+import pandas as pd
+
+def to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Tasa") -> bytes:
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+ACTIONS = {
+    "externos": "Externos",
+    "gastos": "Gastos Adicionales",
+    "duas": "Duas",
+    "percepciones": "Percepciones",
+}
+
+def _ensure_state():
+    if "acao_selecionada" not in st.session_state:
+        st.session_state.acao_selecionada = None
+    if "uploader_key" not in st.session_state:
+        st.session_state.uploader_key = "uploader_none"
+    if "tasa_df" not in st.session_state:
+        st.session_state.tasa_df = None
+
+def _select_action(action_key: str):
+    st.session_state.acao_selecionada = action_key
+    st.session_state.uploader_key = f"uploader_{action_key}"
+
+# -----------------------------
+# Página
+# -----------------------------
+def render():
+    _ensure_state()
+    st.subheader("Processar PDFs")
+
+    tab1, tab2 = st.tabs(["📥 Processamento local", "🌐 Tasa SUNAT"])
+
+    # -------------------------
+    # 📥 Processamento local
+    # -------------------------
+    with tab1:
+        st.markdown("#### Ações rápidas")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Externos", use_container_width=True):
+                _select_action("externos")
+            if st.button("Gastos Adicionales", use_container_width=True):
+                _select_action("gastos")
+        with col2:
+            if st.button("Duas", use_container_width=True):
+                _select_action("duas")
+            if st.button("Percepciones", use_container_width=True):
+                _select_action("percepciones")
+
+        # AVISO se o módulo DUAS não carregou (mas mantém os botões visíveis)
+        if not DUAS_AVAILABLE:
+            st.warning(
+                "O módulo **DUAS** não pôde ser carregado. "
+                "Verifique `services/duas_service.py` e dependências (ex.: `pdfplumber`)."
+            )
+
+        has_action = st.session_state.acao_selecionada is not None
+        if has_action:
+            nome_acao = ACTIONS[st.session_state.acao_selecionada]
+            st.info(f"🔧 Fluxo **{nome_acao}** selecionado.")
+        else:
+            st.caption("Selecione uma ação acima para enviar PDFs e executar o fluxo correspondente.")
+
+        st.divider()
+
+        # ❗️Somente mostra uploader/execução quando há ação selecionada
+        if has_action:
+            uploaded_files = st.file_uploader(
+                f"Envie um ou mais arquivos PDF para **{ACTIONS[st.session_state.acao_selecionada]}**",
+                type=["pdf"],
+                accept_multiple_files=True,
+                key=st.session_state.uploader_key,
+                help="Os arquivos enviados serão processados pelo fluxo selecionado."
+            )
+
+            col_run, col_clear = st.columns([2, 1])
+            with col_run:
+                run_clicked = st.button(
+                    "▶️ Executar",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not uploaded_files
+                )
+            with col_clear:
+                clear_clicked = st.button("Limpar seleção", use_container_width=True)
+
+            if clear_clicked:
+                st.session_state.acao_selecionada = None
+                st.session_state.uploader_key = "uploader_none"
+                st.experimental_rerun()
+
+            # Execução — MANTENHA este bloco DENTRO do if has_action (não dedentar!)
+            if run_clicked and uploaded_files:
+                acao = st.session_state.acao_selecionada
+                nome_acao = ACTIONS[acao]
+                status = st.empty()
+                progress = st.progress(0, text=f"Iniciando fluxo {nome_acao}...")
+
+                if acao == "duas":
+                    cambio_df = st.session_state.get("tasa_df")
+                    if cambio_df is None or getattr(cambio_df, "empty", True):
+                        st.warning("Para calcular **Tasa**, primeiro atualize no tab **🌐 Tasa SUNAT**. O processamento seguirá sem Tasa.")
+
+                    if not DUAS_AVAILABLE:
+                        st.error("DUAS indisponível: confira dependências e arquivo `services/duas_service.py`.")
+                    else:
+                        df_final = process_duas_streamlit(
+                            uploaded_files=uploaded_files,
+                            progress_widget=progress,
+                            status_widget=status,
+                            cambio_df=cambio_df
+                        )
+                        if df_final is not None and not df_final.empty:
+                            st.success("Fluxo DUAS concluído!")
+                            st.dataframe(df_final.head(50), use_container_width=True)
+
+                            col_csv, col_xlsx = st.columns(2)
+                            with col_csv:
+                                st.download_button(
+                                    label="Baixar CSV (DUAS)",
+                                    data=df_final.to_csv(index=False).encode("utf-8"),
+                                    file_name="duas_consolidado.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                )
+                            with col_xlsx:
+                                xlsx_bytes = to_xlsx_bytes(df_final, sheet_name="DUAS")
+                                st.download_button(
+                                    label="Baixar XLSX (DUAS)",
+                                    data=xlsx_bytes,
+                                    file_name="duas_consolidado.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True,
+                                )
+                        else:
+                            st.warning("Nenhuma tabela válida encontrada nos PDFs para o fluxo DUAS.")
+
+                elif acao == "percepciones":
+                    # Verificação do módulo (import protegido no topo)
+                    if not PERC_AVAILABLE:
+                        st.error("Percepciones indisponível: confira dependências e `services/percepcion_service.py`.")
+                    else:
+                        # Executa o pipeline de Percepciones (1ª página de cada PDF via PyMuPDF/fitz)
+                        df_final = process_percepcion_streamlit(
+                            uploaded_files=uploaded_files,
+                            progress_widget=progress,
+                            status_widget=status,
+                        )
+
+                        # Resultado
+                        if df_final is not None and not df_final.empty:
+                            st.success("Percepciones concluído!")
+                            st.dataframe(df_final.head(50), use_container_width=True)
+
+                            # Botões de download
+                            col_csv, col_xlsx = st.columns(2)
+                            with col_csv:
+                                st.download_button(
+                                    label="Baixar CSV (Percepciones)",
+                                    data=df_final.to_csv(index=False).encode("utf-8"),
+                                    file_name="percepciones.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                )
+                            with col_xlsx:
+                                xlsx_bytes = to_xlsx_bytes(df_final, sheet_name="Percepciones")
+                                st.download_button(
+                                    label="Baixar XLSX (Percepciones)",
+                                    data=xlsx_bytes,
+                                    file_name="percepciones.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True,
+                                )
+                        else:
+                            st.warning("Nenhuma informação válida encontrada nos PDFs para Percepciones.")
+
+                else:
+                    # Fluxos AINDA não implementados – mantém placeholder (Externos / Gastos)
+                    for i, f in enumerate(uploaded_files, start=1):
+                        _ = pdf_service.parse_pdf_placeholder(f)
+                        st.write(f"📄 Recebido: **{f.name}** ({i}/{len(uploaded_files)})")
+                        progress.progress(int(i / len(uploaded_files) * 100),
+                                          text=f"Processando {f.name} em {nome_acao}...")
+                    st.success(f"Fluxo {nome_acao} concluído! (placeholder)")
+
+                # Finalização dos placeholders de status/progresso
+                progress.empty()
+                status.empty()
+
+    # -------------------------
+    # 🌐 Tasa SUNAT  (renderiza SEMPRE, independente do tab1)
+    # -------------------------
+    with tab2:
+        st.write("Baixar e consolidar Tasa (SUNAT) direto do site oficial.")
+        anos = st.multiselect(
+            "Anos",
+            ["2024", "2025", "2026"],
+            default=["2024", "2025", "2026"]
+        )
+        if st.button("Atualizar Tasa"):
+            status = st.empty()
+            pbar = st.progress(0, text="Iniciando...")
+            df = atualizar_dataframe_tasa(
+                anos=anos, progress_widget=pbar, status_widget=status
+            )
+            if df is not None and not df.empty:
+                st.session_state.tasa_df = df.copy()
+                st.success("Tasa consolidada com sucesso (armazenada para uso no DUAS).")
+                st.dataframe(df.head(30), use_container_width=True)
+
+                col_csv, col_xlsx = st.columns(2)
+                with col_csv:
+                    st.download_button(
+                        label="Baixar CSV",
+                        data=df.to_csv(index=False).encode("utf-8"),
+                        file_name="tasa_consolidada.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+                with col_xlsx:
+                    xlsx_bytes = to_xlsx_bytes(df, sheet_name="Tasa")
+                    st.download_button(
+                        label="Baixar XLSX",
+                        data=xlsx_bytes,
+                        file_name="tasa_consolidada.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+            else:
+                st.warning("Não foi possível obter dados da Tasa. Verifique credenciais/token/cookie.")
