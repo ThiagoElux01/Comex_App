@@ -43,6 +43,23 @@ if not DUAS_AVAILABLE:
     with st.expander("Detalhes técnicos do erro (DUAS)"):
         st.exception(DUAS_ERR)  # <- mostra o stack-trace real
 
+# --- NOVO: Import protegido do Externos (segue o mesmo padrão dos demais) ---
+EXTERNOS_AVAILABLE = True
+EXTERNOS_ERR = None
+try:
+    from services.externos_service import process_externos_streamlit
+except Exception as e:
+    EXTERNOS_AVAILABLE = False
+    EXTERNOS_ERR = e
+
+if not EXTERNOS_AVAILABLE:
+    st.warning(
+        "Módulo **Externos** não pôde ser carregado. "
+        "Verifique `services/externos_service.py` e dependências (ex.: `PyMuPDF`)."
+    )
+    with st.expander("Detalhes técnicos do erro (Externos)"):
+        st.exception(EXTERNOS_ERR)
+
 # -----------------------------
 # Utilidades
 # -----------------------------
@@ -228,13 +245,53 @@ def render():
                         else:
                             st.warning("Nenhuma informação válida encontrada nos PDFs para Percepciones.")
 
+                # --- NOVO: fluxo real para Externos (sem afetar os demais) ---
+                elif acao == "externos":
+                    if not EXTERNOS_AVAILABLE:
+                        st.error("Externos indisponível: confira dependências e `services/externos_service.py`.")
+                    else:
+                        cambio_df = st.session_state.get("tasa_df")  # opcional, se o serviço usar Tasa
+                        df_final = process_externos_streamlit(
+                            uploaded_files=uploaded_files,
+                            progress_widget=progress,
+                            status_widget=status,
+                            cambio_df=cambio_df,
+                        )
+
+                        if df_final is not None and not df_final.empty:
+                            st.success("Externos concluído!")
+                            st.dataframe(df_final.head(50), use_container_width=True)
+
+                            col_csv, col_xlsx = st.columns(2)
+                            with col_csv:
+                                st.download_button(
+                                    label="Baixar CSV (Externos)",
+                                    data=df_final.to_csv(index=False).encode("utf-8"),
+                                    file_name="externos.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                )
+                            with col_xlsx:
+                                xlsx_bytes = to_xlsx_bytes(df_final, sheet_name="Externos")
+                                st.download_button(
+                                    label="Baixar XLSX (Externos)",
+                                    data=xlsx_bytes,
+                                    file_name="externos.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True,
+                                )
+                        else:
+                            st.warning("Nenhuma informação válida encontrada nos PDFs para Externos.")
+
                 else:
-                    # Fluxos AINDA não implementados – mantém placeholder (Externos / Gastos)
+                    # Placeholder SOMENTE para "Gastos Adicionales"
                     for i, f in enumerate(uploaded_files, start=1):
                         _ = pdf_service.parse_pdf_placeholder(f)
                         st.write(f"📄 Recebido: **{f.name}** ({i}/{len(uploaded_files)})")
-                        progress.progress(int(i / len(uploaded_files) * 100),
-                                          text=f"Processando {f.name} em {nome_acao}...")
+                        progress.progress(
+                            int(i / len(uploaded_files) * 100),
+                            text=f"Processando {f.name} em {nome_acao}..."
+                        )
                     st.success(f"Fluxo {nome_acao} concluído! (placeholder)")
 
                 # Finalização dos placeholders de status/progresso
@@ -259,7 +316,7 @@ def render():
             )
             if df is not None and not df.empty:
                 st.session_state.tasa_df = df.copy()
-                st.success("Tasa consolidada com sucesso (armazenada para uso no DUAS).")
+                st.success("Tasa consolidada com sucesso (armazenada para uso no DUAS/Externos).")
                 st.dataframe(df.head(30), use_container_width=True)
 
                 col_csv, col_xlsx = st.columns(2)
