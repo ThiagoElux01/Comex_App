@@ -1,4 +1,4 @@
-'''import streamlit as st
+import streamlit as st
 from auth import is_authenticated
 from ui.login import render_login
 from ui.layout import app_header, sidebar_navigation
