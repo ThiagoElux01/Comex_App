@@ -119,7 +119,13 @@ def render():
     _ensure_state()
     st.subheader("Processar PDFs")
 
-    tab1, tab2 = st.tabs(["📥 Processamento local", "🌐 Tasa SUNAT"])
+    
+    tab1, tab2, tab3 = st.tabs([
+        "📥 Processamento local",
+        "🌐 Tasa SUNAT",
+        "📁 Arquivo Sharepoint"
+    ])
+
 
     # -------------------------
     # 📥 Processamento local
