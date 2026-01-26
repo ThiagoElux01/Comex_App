@@ -19,6 +19,9 @@ def main():
         home.render()
     elif page == "Processar PDFs":
         process_pdfs.render()
+    
+    elif page == "Arquivos modelo":  # <--- NOVO CASE
+        downloads_page.render()
     elif page == "Configurações":
         settings_page.render()
     else:
