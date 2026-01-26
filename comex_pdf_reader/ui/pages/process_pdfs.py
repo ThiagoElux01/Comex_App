@@ -4,6 +4,26 @@ import streamlit as st
 from services import pdf_service
 from services.tasa_service import atualizar_dataframe_tasa
 
+
+
+# --- NOVO: Import protegido do Adicionales ---
+ADICIONALES_AVAILABLE = True
+ADICIONALES_ERR = None
+try:
+    from services.adicionales_service import process_adicionales_streamlit
+except Exception as e:
+    ADICIONALES_AVAILABLE = False
+    ADICIONALES_ERR = e
+
+if not ADICIONALES_AVAILABLE:
+    st.warning(
+        "Módulo **Gastos Adicionales** não pôde ser carregado. "
+        "Verifique `services/adicionales_service.py` e dependências (ex.: `PyMuPDF`)."
+    )
+    with st.expander("Detalhes técnicos do erro (Adicionales)"):
+        st.exception(ADICIONALES_ERR)
+
+
 # -----------------------------
 # Imports protegidos (diagnóstico no app)
 # -----------------------------
@@ -283,20 +303,43 @@ def render():
                         else:
                             st.warning("Nenhuma informação válida encontrada nos PDFs para Externos.")
 
-                else:
-                    # Placeholder SOMENTE para "Gastos Adicionales"
-                    for i, f in enumerate(uploaded_files, start=1):
-                        _ = pdf_service.parse_pdf_placeholder(f)
-                        st.write(f"📄 Recebido: **{f.name}** ({i}/{len(uploaded_files)})")
-                        progress.progress(
-                            int(i / len(uploaded_files) * 100),
-                            text=f"Processando {f.name} em {nome_acao}..."
-                        )
-                    st.success(f"Fluxo {nome_acao} concluído! (placeholder)")
 
-                # Finalização dos placeholders de status/progresso
-                progress.empty()
-                status.empty()
+                elif acao == "gastos":
+                    if not ADICIONALES_AVAILABLE:
+                        st.error("Gastos Adicionales indisponível: confira dependências e `services/adicionales_service.py`.")
+                    else:
+                        cambio_df = st.session_state.get("tasa_df")  # opcional, se você quiser usar Tasa
+                        df_final = process_adicionales_streamlit(
+                            uploaded_files=uploaded_files,
+                            progress_widget=progress,
+                            status_widget=status,
+                            cambio_df=cambio_df,
+                        )
+                
+                        if df_final is not None and not df_final.empty:
+                            st.success("Gastos Adicionales concluído!")
+                            st.dataframe(df_final.head(50), use_container_width=True)
+                
+                            col_csv, col_xlsx = st.columns(2)
+                            with col_csv:
+                                st.download_button(
+                                    label="Baixar CSV (Adicionales)",
+                                    data=df_final.to_csv(index=False).encode("utf-8"),
+                                    file_name="gastos_adicionales.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                )
+                            with col_xlsx:
+                                xlsx_bytes = to_xlsx_bytes(df_final, sheet_name="Adicionales")
+                                st.download_button(
+                                    label="Baixar XLSX (Adicionales)",
+                                    data=xlsx_bytes,
+                                    file_name="gastos_adicionales.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True,
+                                )
+                        else:
+                            st.warning("Nenhuma informação válida encontrada nos PDFs para Gastos Adicionales.")
 
     # -------------------------
     # 🌐 Tasa SUNAT  (renderiza SEMPRE, independente do tab1)
