@@ -6,9 +6,6 @@ from ui.layout import app_header, sidebar_navigation
 from settings import PAGES
 from ui.pages import home, process_pdfs, settings_page
 from ui.pages import downloads_page
-
-
-import streamlit as st
 import pandas as pd
 from pathlib import Path
 
