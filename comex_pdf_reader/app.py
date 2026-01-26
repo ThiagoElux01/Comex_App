@@ -19,14 +19,6 @@ def main():
     # 1) lê a página escolhida
     page = sidebar_navigation(PAGES)
 
-    # 2) botão “Arquivos modelo” aparece SOMENTE na Home
-    if page == "Home":
-        col_l, col_r = st.columns([6, 1])
-        with col_r:
-            if st.button("⬇️ Arquivos modelo", use_container_width=True):
-                st.session_state["_goto_page"] = "Arquivos modelo"
-                st.rerun()  # fora de callback → ok
-
     # 3) se foi disparada navegação por botão, priorize esse destino
     if st.session_state.get("_goto_page"):
         page = st.session_state.pop("_goto_page")
