@@ -4,6 +4,7 @@ from io import BytesIO
 from typing import List, Optional
 import fitz  # PyMuPDF
 import pandas as pd
+import streamlit as st
 
 from services.adicionales_utils import (
     extrair_ruc, extrair_facturas, remover_ruc_indesejado, criar_coluna_proveedor_iscala,
@@ -78,6 +79,11 @@ def process_adicionales_streamlit(
     df = organizar_colunas_adicionales(df)
     df = remover_duplicatas_source_file(df)
     df = df.drop(columns=["conteudo_pdf"], errors="ignore")
+
+    
+    from services.adicionales_utils import adicionar_sharepoint_adicionales
+    sharepoint_df = st.session_state.get("sharepoint_df")
+    df = adicionar_sharepoint_adicionales(df, sharepoint_df)
 
     if progress_widget:
         progress_widget.progress(100, text="Concluído (Gastos Adicionales).")
