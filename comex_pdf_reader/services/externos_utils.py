@@ -1104,6 +1104,7 @@ def op_gravada_negativo_CN_externos(df):
 
 
 
+
 def merge_pec_fast(df_externos, df_sharepoint):
 
     df_ext = df_externos.copy()
@@ -1119,12 +1120,12 @@ def merge_pec_fast(df_externos, df_sharepoint):
     df_ext["key_ext"] = df_ext["source_file"].astype(str).str.lower()
     df_sp["key_sp"]  = df_sp["name"].astype(str).str.lower()
 
-    # Merge cartesiano (todas combinações)
+    # Merge cartesiano
     df_ext["_tmp"] = 1
     df_sp["_tmp"] = 1
     df_all = df_ext.merge(df_sp, on="_tmp")
 
-    # Comparação segura: linha por linha
+    # Comparação linha a linha
     def match(row):
         ext = row["key_ext"]
         sp  = row["key_sp"]
@@ -1132,11 +1133,14 @@ def merge_pec_fast(df_externos, df_sharepoint):
 
     df_all = df_all[df_all.apply(match, axis=1)]
 
-    # Seleciona apenas source_file + PEC
+    # PEC encontrado
     df_pec = df_all[["source_file", "PEC"]].drop_duplicates()
 
-    # Merge final no DF de Externos
+    # Junta no dataframe final
     df_final = df_ext.merge(df_pec, on="source_file", how="left")
+
+    # REMOVE colunas auxiliares
+    df_final = df_final.drop(columns=["key_ext", "_tmp"], errors="ignore")
 
     return df_final
 
