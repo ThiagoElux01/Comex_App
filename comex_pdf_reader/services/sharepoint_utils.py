@@ -56,7 +56,9 @@ def corrigir_data_sharepoint(valor):
            -----------
     # 3) Tenta meses PT/ES convertidos para inglês
     # ---------------------------
+
     meses = {
+        # Português
         "jan": "Jan", "janeiro": "Jan",
         "fev": "Feb", "fevereiro": "Feb",
         "mar": "Mar", "março": "Mar",
@@ -65,10 +67,12 @@ def corrigir_data_sharepoint(valor):
         "jun": "Jun", "junho": "Jun",
         "jul": "Jul", "julho": "Jul",
         "ago": "Aug", "agosto": "Aug",
-       outubro": "Oct",
+        "set": "Sep", "setembro": "Sep",
+        "out": "Oct", "outubro": "Oct",
         "nov": "Nov", "novembro": "Nov",
         "dez": "Dec", "dezembro": "Dec",
-
+    
+        # Espanhol
         "ene": "Jan", "enero": "Jan",
         "feb": "Feb", "febrero": "Feb",
         "mar": "Mar", "marzo": "Mar",
@@ -80,8 +84,9 @@ def corrigir_data_sharepoint(valor):
         "sep": "Sep", "sept": "Sep", "septiembre": "Sep",
         "oct": "Oct", "octubre": "Oct",
         "nov": "Nov", "noviembre": "Nov",
-        "dic": "Dec", "diciembre": "Dec",
+        "dic": "Dec", "diciembre": "Dec"
     }
+
 
     # substitui mês PT/ES por EN
     s_proc = s.lower()
