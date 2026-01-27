@@ -149,7 +149,7 @@ def process_externos_streamlit(
         "VACUUM CLEANER": 10,
         "ROBOTIC VACUUM CLEANERS": 10,
         "STEAM IRON": 34,
-        "GARMENT STEAMER": 34,   
+        "GARMENT STEAMER": 34,
         "HANDHELD GARMENT STEAMER": 34,
         "DISHWASHER": 24,
         "GAS HOB": 38,           
