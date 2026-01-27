@@ -2,6 +2,51 @@
 import pandas as pd
 import re
 
+def clean_number(value):
+    if value is None:
+        return None
+
+    s = str(value).strip()
+
+    # Remove moeda e símbolos estranhos
+    s = re.sub(r"[^\d.,-]", "", s)
+
+    # Caso 1: formato BR (milhar com ponto + decimal com vírgula)
+    # Ex: 8.428,74
+    if "." in s and "," in s:
+        s = s.replace(".", "").replace(",", ".")
+        try:
+            return float(s)
+        except:
+            return None
+
+    # Caso 2: decimal usando vírgula
+    # Ex: 8428,74
+    if "," in s:
+        s = s.replace(",", ".")
+        try:
+            return float(s)
+        except:
+            return None
+
+    # Caso 3: decimal com ponto
+    # Ex: 8428.74
+    if "." in s:
+        try:
+            return float(s)
+        except:
+            return None
+
+    # Caso 4: inteiro puro (Ex: 842874)
+    if s.isdigit():
+        return float(s)
+
+    # fallback
+    try:
+        return float(s)
+    except:
+        return None
+
 def ajustar_sharepoint_df(df: pd.DataFrame) -> pd.DataFrame:
     """Aplica ajustes específicos ao DataFrame Sharepoint."""
     
@@ -28,15 +73,7 @@ def ajustar_sharepoint_df(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
     for col in possiveis_nomes_importe:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.replace(r"[^\d,.-]", "", regex=True)  # remove letras, R$, $, etc
-                .str.replace(".", "", regex=False)         # remove separador de milhares
-                .str.replace(",", ".", regex=False)        # vírgula vira decimal
-            )
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col] = df[col].apply(clean_number)
 
     # ============================================================
     # 3) FECHA DE EMISION DEL DOCUMENTO → data
