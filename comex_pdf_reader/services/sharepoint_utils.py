@@ -1,6 +1,106 @@
 
 import pandas as pd
 import re
+from datetime import datetime
+
+def corrigir_data_sharepoint(valor):
+    """
+    Converte datas de qualquer formato irregular do SharePoint para dd/mm/yyyy.
+    Caso não seja possível converter, retorna ''.
+    """
+
+    if valor is None:
+        return ""
+
+    s = str(valor).strip()
+
+    # Remove lixo comum
+    s = s.replace("\u200b", "")      # zero-width space
+    s = s.replace("\u00a0", " ")     # NBSP
+    s = s.strip()
+
+    if s == "":
+        return ""
+
+    # ---------------------------
+    # 1) Normalização com REGEX
+    # ---------------------------
+
+    # Extrai apenas o trecho que parece ser uma data
+    padrao = re.compile(
+        r'(\d{1,4}[-/]\d{1,2}[-/]\d{1,4})'
+        r'|(\d{1,2}\s+[A-Za-záéíóúñçÇâêôãõ]{3,15}\s+\d{2,4})'
+    )
+    m = padrao.search(s)
+    if m:
+        s = m.group(0)
+
+    # ---------------------------
+    # 2) Tenta vários formatos conhecidos
+    # ---------------------------
+    formatos = [
+        "%d/%m/%Y", "%d-%m-%Y",
+        "%Y/%m/%d", "%Y-%m-%d",
+        "%m/%d/%Y", "%m-%d-%Y",
+        "%d/%m/%y",  "%d-%m-%y",
+        "%Y/%m/%d", "%Y-%m-%d",
+        "%d %b %Y", "%d %B %Y",
+        "%d %b %y", "%d %B %y",
+    ]
+
+    for fmt in formatos:
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.strftime("%d/%m/%Y")
+        except:
+           -----------
+    # 3) Tenta meses PT/ES convertidos para inglês
+    # ---------------------------
+    meses = {
+        "jan": "Jan", "janeiro": "Jan",
+        "fev": "Feb", "fevereiro": "Feb",
+        "mar": "Mar", "março": "Mar",
+        "abr": "Apr", "abril": "Apr",
+        "mai": "May", "maio": "May",
+        "jun": "Jun", "junho": "Jun",
+        "jul": "Jul", "julho": "Jul",
+        "ago": "Aug", "agosto": "Aug",
+       outubro": "Oct",
+        "nov": "Nov", "novembro": "Nov",
+        "dez": "Dec", "dezembro": "Dec",
+
+        "ene": "Jan", "enero": "Jan",
+        "feb": "Feb", "febrero": "Feb",
+        "mar": "Mar", "marzo": "Mar",
+        "abr": "Apr", "abril": "Apr",
+        "may": "May", "mayo": "May",
+        "jun": "Jun", "junio": "Jun",
+        "jul": "Jul", "julio": "Jul",
+        "ago": "Aug", "agosto": "Aug",
+        "sep": "Sep", "sept": "Sep", "septiembre": "Sep",
+        "oct": "Oct", "octubre": "Oct",
+        "nov": "Nov", "noviembre": "Nov",
+        "dic": "Dec", "diciembre": "Dec",
+    }
+
+    # substitui mês PT/ES por EN
+    s_proc = s.lower()
+    for mes_local, mes_en in meses.items():
+        s_proc = re.sub(rf"\b{mes_local}\b", mes_en, s_proc)
+
+    s_proc = s_proc.title()
+
+    for fmt in ["%d %b %Y", "%d %B %Y", "%d-%b-%Y", "%d-%B-%Y"]:
+        try:
+            dt = datetime.strptime(s_proc, fmt)
+            return dt.strftime("%d/%m/%Y")
+        except:
+            pass
+
+    # ---------------------------
+    # 4) Não converteu -> retorna vazio
+    # ---------------------------
+    return ""
 
 # ============================================================
 # FUNÇÃO ROBUSTA PARA LIMPAR NÚMEROS DO SHAREPOINT
