@@ -73,6 +73,9 @@ def process_externos_streamlit(
     rows = []
     total = len(uploaded_files)
 
+    # -------------------------------
+    # Leitura dos PDFs para DataFrame
+    # -------------------------------
     for i, f in enumerate(uploaded_files, start=1):
         fname = getattr(f, "name", f"arquivo_{i}.pdf")
         text = _extract_text_from_pdf_bytes(f.getvalue())
@@ -80,15 +83,16 @@ def process_externos_streamlit(
 
         if progress_widget:
             pct = int(i / total * 100)
-            progress_widget.progress(
-                pct, text=f"Lendo {fname} ({i}/{total})"
-            )
+            progress_widget.progress(pct, text=f"Lendo {fname} ({i}/{total})")
+
         if status_widget:
             status_widget.write(f"📄 Lido: **{fname}**")
 
     df = pd.DataFrame(rows)
 
-    # ========== PIPELINE PRINCIPAL ==========
+    # ------------------------
+    # PIPELINE PRINCIPAL
+    # ------------------------
 
     df = identificar_Proveedor(df)
     df = adicionar_provedor_iscala(df)
@@ -116,9 +120,6 @@ def process_externos_streamlit(
 
     df = adicionar_cod_autorizacion_ext(df)
     df = adicionar_tip_fac_ext(df)
-
-    df = organizar_colunas_externos(df)
-    df = remover_duplicatas_source_file(df)
 
     # ===========================================================
     # ADICIONA PEC VINDO DO SHAREPOINT (SE EXISTIR)
@@ -158,9 +159,14 @@ def process_externos_streamlit(
                 return num
         return None
 
+    # 👇 CRIAR ANTES DE ORGANIZAR AS COLUNAS
     df["Lineaabajo"] = df["conteudo_pdf"].apply(detectar_linea)
 
-    # Agora sim remover o conteúdo do PDF
+    # Agora organizar colunas
+    df = organizar_colunas_externos(df)
+    df = remover_duplicatas_source_file(df)
+
+    # Agora sim apagar o conteúdo bruto do PDF
     df = df.drop(columns=["conteudo_pdf"], errors="ignore")
 
     # --------------------------------------------------------
@@ -180,9 +186,12 @@ def process_externos_streamlit(
     preencher_vazio("Amount", "importe_documento")
     preencher_vazio("Tasa", "Tasa_Sharepoint")
 
-    # Mensagens finais
+    # --------------------------------------------------------
+    # FIM DO PIPELINE
+    # --------------------------------------------------------
     if progress_widget:
         progress_widget.progress(100, text="Concluído (Externos).")
+
     if status_widget:
         status_widget.success("Pipeline Externos finalizado.")
 
