@@ -123,4 +123,35 @@ def process_externos_streamlit(
     if status_widget:
         status_widget.success("Pipeline Externos finalizado.")
 
+    
+    # ------------------------------------------
+    # COMPLEMENTAR CAMPOS VAZIOS COM SHAREPOINT
+    # ------------------------------------------
+    def preencher_vazio(dest_col, src_col):
+        if dest_col in df.columns and src_col in df.columns:
+            df[dest_col] = df[dest_col].fillna("").replace("", None)
+            df[src_col] = df[src_col].fillna("").replace("", None)
+            df[dest_col] = df[dest_col].combine_first(df[src_col])
+    
+    # 1) Proveedor Iscala ← proveedor
+    preencher_vazio("Proveedor Iscala", "proveedor")
+    
+    # 2) Factura ← numero_de_documento
+    preencher_vazio("Factura", "numero_de_documento")
+    
+    # 3) Tipo Doc ← tipo_doc
+    preencher_vazio("Tipo Doc", "tipo_doc")
+    
+    # 4) Fecha de Emisión ← Fecha_Emision
+    preencher_vazio("Fecha de Emisión", "Fecha_Emision")
+    
+    # 5) Moneda ← moneda
+    preencher_vazio("Moneda", "moneda")
+    
+    # 6) Amount ← importe_documento
+    preencher_vazio("Amount", "importe_documento")
+    
+    # 7) Tasa ← Tasa_Sharepoint
+    preencher_vazio("Tasa", "Tasa_Sharepoint")
+
     return df
