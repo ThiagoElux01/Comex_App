@@ -152,7 +152,7 @@ def process_externos_streamlit(
         "ELECTRIC OVEN": 22,
     }
 
-    def detectar_linea(texto_pdf: str) -> int | None:
+    def detectar_linea(texto_pdf: str) -> Optional[int]:
         if not isinstance(texto_pdf, str):
             return None
         up = texto_pdf.upper()
