@@ -6,8 +6,7 @@ import fitz  # PyMuPDF
 from typing import List, Optional
 import streamlit as st
 
-# ✅ Corrija o caminho do import (agora puxa do services.externos_utils)
-# ✅ Corrija o nome da função: adicionar_tip_fac_ext (tudo minúsculo)
+# Import correto das funções auxiliares
 from services.externos_utils import (
     identificar_Proveedor,
     adicionar_provedor_iscala,
@@ -22,7 +21,7 @@ from services.externos_utils import (
     adicionar_erro,
     organizar_colunas_externos,
     adicionar_cod_autorizacion_ext,
-    adicionar_tip_fac_ext,          # <--- nome corrigido
+    adicionar_tip_fac_ext,
     remover_duplicatas_source_file,
     op_gravada_negativo_CN_externos,
 )
@@ -31,17 +30,28 @@ from services.externos_utils import (
 def adicionar_coluna_tasa_externos(df, cambio_df):
     if cambio_df is None or cambio_df.empty or "Fecha de Emisión" not in df.columns:
         return df
+
     dft = df.copy()
-    dft["Fecha_tmp"] = pd.to_datetime(dft["Fecha de Emisión"], errors="coerce", dayfirst=True)
+    dft["Fecha_tmp"] = pd.to_datetime(
+        dft["Fecha de Emisión"], errors="coerce", dayfirst=True
+    )
+
     tasa = cambio_df.copy()
     tasa["Data"] = pd.to_datetime(tasa["Data"], errors="coerce", dayfirst=True)
-    dft = dft.merge(tasa[["Data", "Venta"]], how="left", left_on="Fecha_tmp", right_on="Data")
+
+    dft = dft.merge(
+        tasa[["Data", "Venta"]],
+        how="left",
+        left_on="Fecha_tmp",
+        right_on="Data",
+    )
+
     dft.rename(columns={"Venta": "Tasa"}, inplace=True)
-    dft.drop(columns=["Fecha_tmp","Data"], inplace=True)
+    dft.drop(columns=["Fecha_tmp", "Data"], inplace=True)
     return dft
 
 
-def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:   # <- garanta '->' (não '&gt;')
+def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
     """Extrai texto de todas as páginas do PDF via PyMuPDF."""
     try:
         with fitz.open(stream=BytesIO(pdf_bytes), filetype="pdf") as doc:
@@ -55,13 +65,14 @@ def process_externos_streamlit(
     uploaded_files: List,
     progress_widget=None,
     status_widget=None,
-    cambio_df: Optional[pd.DataFrame] = None,   # Tasa consolidada (opcional)
+    cambio_df: Optional[pd.DataFrame] = None,
 ):
     if not uploaded_files:
         return None
 
     rows = []
     total = len(uploaded_files)
+
     for i, f in enumerate(uploaded_files, start=1):
         fname = getattr(f, "name", f"arquivo_{i}.pdf")
         text = _extract_text_from_pdf_bytes(f.getvalue())
@@ -69,15 +80,19 @@ def process_externos_streamlit(
 
         if progress_widget:
             pct = int(i / total * 100)
-            progress_widget.progress(pct, text=f"Lendo {fname} ({i}/{total})")
+            progress_widget.progress(
+                pct, text=f"Lendo {fname} ({i}/{total})"
+            )
         if status_widget:
             status_widget.write(f"📄 Lido: **{fname}**")
 
     df = pd.DataFrame(rows)
 
-    # === Pipeline (as suas funções) — nenhuma lógica alterada ===
+    # ========== PIPELINE PRINCIPAL ==========
+
     df = identificar_Proveedor(df)
     df = adicionar_provedor_iscala(df)
+
     df = extrair_factura(df)
     df = ajustar_factura(df)
 
@@ -90,68 +105,85 @@ def process_externos_streamlit(
     df = adicionar_amount(df)
     df = ajustar_amount(df)
 
-    # Negativar Amount para Credit Note
     df = op_gravada_negativo_CN_externos(df)
 
-    # Erro se não achou fornecedor
     df = adicionar_erro(df)
 
-    # (Opcional) Tasa via aba Tasa SUNAT
     df = adicionar_coluna_tasa_externos(df, cambio_df=cambio_df)
 
-    # Regra opcional: se for moeda "00", força Tasa=1 (avalie se "01" é USD no seu caso)
     if "Cod. Moneda" in df.columns:
         df.loc[df["Cod. Moneda"] == "00", "Tasa"] = 1
 
     df = adicionar_cod_autorizacion_ext(df)
-    df = adicionar_tip_fac_ext(df)  # <--- nome corrigido
+    df = adicionar_tip_fac_ext(df)
+
     df = organizar_colunas_externos(df)
     df = remover_duplicatas_source_file(df)
-    df = df.drop(columns=["conteudo_pdf"], errors="ignore")
 
-    
     # ===========================================================
     # ADICIONA PEC VINDO DO SHAREPOINT (SE EXISTIR)
     # ===========================================================
     from services.externos_utils import adicionar_pec_sharepoint
-    
     sharepoint_df = st.session_state.get("sharepoint_df")
     df = adicionar_pec_sharepoint(df, sharepoint_df)
 
-    if progress_widget:
-        progress_widget.progress(100, text="Concluído (Externos).")
-    if status_widget:
-        status_widget.success("Pipeline Externos finalizado.")
+    # --------------------------------------------------------
+    # CRIAÇÃO DA COLUNA Lineaabajo COM BASE NO CONTEÚDO DO PDF
+    # --------------------------------------------------------
+    MAP_LINEA = {
+        "REFRIGERATOR": 36,
+        "CHEST FREEZER": 35,
+        "STOVE": 38,
+        "WASHER": 25,
+        "WASHING MACHINE": 25,
+        "MICROWAVE OVEN": 22,
+        "COCINA": 22,
+        "VACUUM CLEANER": 10,
+        "AIR FRYER": 22,
+        "SECADORA": 45,
+        "GAS OVEN": 38,
+        "GAS HOB": 38,
+        "DISHWASHER": 24,
+        "SPARE PARTS": 34,
+        "COOKER": 22,
+        "ELECTRIC OVEN": 22,
+    }
 
-    
-    # ------------------------------------------
+    def detectar_linea(texto_pdf: str) -> int | None:
+        if not isinstance(texto_pdf, str):
+            return None
+        up = texto_pdf.upper()
+        for ref, num in MAP_LINEA.items():
+            if ref in up:
+                return num
+        return None
+
+    df["Lineaabajo"] = df["conteudo_pdf"].apply(detectar_linea)
+
+    # Agora sim remover o conteúdo do PDF
+    df = df.drop(columns=["conteudo_pdf"], errors="ignore")
+
+    # --------------------------------------------------------
     # COMPLEMENTAR CAMPOS VAZIOS COM SHAREPOINT
-    # ------------------------------------------
+    # --------------------------------------------------------
     def preencher_vazio(dest_col, src_col):
         if dest_col in df.columns and src_col in df.columns:
             df[dest_col] = df[dest_col].fillna("").replace("", None)
             df[src_col] = df[src_col].fillna("").replace("", None)
             df[dest_col] = df[dest_col].combine_first(df[src_col])
-    
-    # 1) Proveedor Iscala ← proveedor
+
     preencher_vazio("Proveedor Iscala", "proveedor")
-    
-    # 2) Factura ← numero_de_documento
     preencher_vazio("Factura", "numero_de_documento")
-    
-    # 3) Tipo Doc ← tipo_doc
     preencher_vazio("Tipo Doc", "tipo_doc")
-    
-    # 4) Fecha de Emisión ← Fecha_Emision
     preencher_vazio("Fecha de Emisión", "Fecha_Emision")
-    
-    # 5) Moneda ← moneda
     preencher_vazio("Moneda", "moneda")
-    
-    # 6) Amount ← importe_documento
     preencher_vazio("Amount", "importe_documento")
-    
-    # 7) Tasa ← Tasa_Sharepoint
     preencher_vazio("Tasa", "Tasa_Sharepoint")
+
+    # Mensagens finais
+    if progress_widget:
+        progress_widget.progress(100, text="Concluído (Externos).")
+    if status_widget:
+        status_widget.success("Pipeline Externos finalizado.")
 
     return df
