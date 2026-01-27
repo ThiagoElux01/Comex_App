@@ -148,7 +148,7 @@ def process_externos_streamlit(
         "COOKER": 22,
         "ELECTRIC OVEN": 22,
         "SEC ELEC": 25,
-        "KE4CT":22,
+        "KE4CT":22
     }
 
     def detectar_linea(texto_pdf: str) -> Optional[int]:
