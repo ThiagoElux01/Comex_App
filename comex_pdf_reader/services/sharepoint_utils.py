@@ -2,17 +2,20 @@
 import pandas as pd
 import re
 
+# ============================================================
+# FUNÇÃO ROBUSTA PARA LIMPAR NÚMEROS DO SHAREPOINT
+# ============================================================
 def clean_number(value):
     if value is None:
         return None
 
     s = str(value).strip()
 
-    # Remove moeda e símbolos estranhos
+    # Remove símbolos, letras e moedas (R$, $, USD etc.)
     s = re.sub(r"[^\d.,-]", "", s)
 
-    # Caso 1: formato BR (milhar com ponto + decimal com vírgula)
-    # Ex: 8.428,74
+    # Caso: milhar com ponto e decimal com vírgula (BR)
+    # Ex: 8.428,74 → 8428.74
     if "." in s and "," in s:
         s = s.replace(".", "").replace(",", ".")
         try:
@@ -20,8 +23,8 @@ def clean_number(value):
         except:
             return None
 
-    # Caso 2: decimal usando vírgula
-    # Ex: 8428,74
+    # Caso: decimal com vírgula
+    # Ex: 8428,74 → 8428.74
     if "," in s:
         s = s.replace(",", ".")
         try:
@@ -29,15 +32,15 @@ def clean_number(value):
         except:
             return None
 
-    # Caso 3: decimal com ponto
-    # Ex: 8428.74
+    # Caso: decimal com ponto
+    # Ex: 8428.74 → 8428.74
     if "." in s:
         try:
             return float(s)
         except:
             return None
 
-    # Caso 4: inteiro puro (Ex: 842874)
+    # Caso: inteiro puro (842874)
     if s.isdigit():
         return float(s)
 
@@ -47,13 +50,17 @@ def clean_number(value):
     except:
         return None
 
+
+# ============================================================
+# AJUSTE COMPLETO DO DATAFRAME DO SHAREPOINT
+# ============================================================
 def ajustar_sharepoint_df(df: pd.DataFrame) -> pd.DataFrame:
     """Aplica ajustes específicos ao DataFrame Sharepoint."""
-    
+
     df = df.copy()
 
     # ------------------------------------------------------------
-    # 1) Normalizar nomes de colunas
+    # 1) Normalizar nomes das colunas
     # ------------------------------------------------------------
     df.columns = (
         df.columns
@@ -64,7 +71,7 @@ def ajustar_sharepoint_df(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ============================================================
-    # 2) IMPORTE DOCUMENTO → número
+    # 2) IMPORTE DOCUMENTO → número (agora usando clean_number)
     # ============================================================
     possiveis_nomes_importe = [
         "importe_documento",
@@ -73,7 +80,8 @@ def ajustar_sharepoint_df(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
     for col in possiveis_nomes_importe:
-        df[col] = df[col].apply(clean_number)
+        if col in df.columns:
+            df[col] = df[col].apply(clean_number)
 
     # ============================================================
     # 3) FECHA DE EMISION DEL DOCUMENTO → data
