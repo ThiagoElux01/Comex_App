@@ -517,6 +517,7 @@ def merge_sharepoint_adicionales(df_adic, df_sp):
         "tipo_doc",
         "numero_de_documento",
         "Fecha_Emision",
+        "Tasa_Sharepoint",
     ]
     colunas_extras = [c for c in colunas_extras if c in df_all.columns]
 
@@ -528,8 +529,11 @@ def merge_sharepoint_adicionales(df_adic, df_sp):
     # Remove colunas auxiliares
     df_final = df_final.drop(columns=["key_ext", "_tmp"], errors="ignore")
 
-    return df_final
 
+    # Remover duplicadas — mantém última versão
+    df_final = df_final.loc[:, ~df_final.columns.duplicated(keep="last")]
+    
+    return df_final
 
 def adicionar_sharepoint_adicionales(df_adic, df_sharepoint):
     if df_sharepoint is None or df_sharepoint.empty:
