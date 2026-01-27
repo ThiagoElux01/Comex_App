@@ -466,6 +466,7 @@ def remover_duplicatas_source_file(df: pd.DataFrame) -> pd.DataFrame:
 import pandas as pd
 import re
 
+
 def merge_sharepoint_adicionales(df_adic, df_sp):
 
     df_ext = df_adic.copy()
@@ -479,9 +480,20 @@ def merge_sharepoint_adicionales(df_adic, df_sp):
     }
     df_sp = df_sp.rename(columns=renames)
 
-    # Normaliza texto para comparação
-    df_ext["key_ext"] = df_ext["source_file"].astype(str).str.lower()
-    df_sp["key_sp"] = df_sp["name"].astype(str).str.lower()
+    # Função para limpar espaços invisíveis, múltiplos espaços e normalizar nomes
+    import re
+    def normalizar_nome(s):
+        if s is None:
+            return ""
+        s = str(s)
+        s = s.replace("\u200b", "")      # zero-width space invisível
+        s = s.replace("\u00a0", " ")     # no-break space
+        s = re.sub(r"\s+", " ", s)       # múltiplos espaços -> 1 espaço
+        return s.lower().strip()         # minúsculas e trim
+
+    # Normaliza texto para comparação (AGORA SIM!)
+    df_ext["key_ext"] = df_ext["source_file"].apply(normalizar_nome)
+    df_sp["key_sp"]  = df_sp["name"].apply(normalizar_nome)
 
     # Merge cartesiano
     df_ext["_tmp"] = 1
@@ -491,7 +503,7 @@ def merge_sharepoint_adicionales(df_adic, df_sp):
     # Compatibilidade textual
     def match(row):
         ext = row["key_ext"]
-        sp = row["key_sp"]
+        sp  = row["key_sp"]
         return ext in sp or sp in ext
 
     df_all = df_all[df_all.apply(match, axis=1)]
