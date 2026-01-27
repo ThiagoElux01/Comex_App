@@ -75,9 +75,9 @@ def process_adicionales_streamlit(
     df = Ajustar_nro_nota_credito(df)
     df = adicionar_cod_autorizacion_adicionales(df)
     df = adicionar_tip_doc_adicionales(df)
-
     df = organizar_colunas_adicionales(df)
     df = remover_duplicatas_source_file(df)
+    df = df.drop(columns=["conteudo_pdf"], errors="ignore"
 
     if progress_widget:
         progress_widget.progress(100, text="Concluído (Gastos Adicionales).")
