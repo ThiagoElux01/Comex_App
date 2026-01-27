@@ -2,6 +2,7 @@
 import pandas as pd
 import re
 from datetime import datetime
+import streamlit as st
 
 def adicionar_tasa_sharepoint(df, tasa_df):
     """
@@ -205,5 +206,9 @@ def ajustar_sharepoint_df(df: pd.DataFrame) -> pd.DataFrame:
             .str[0]
             .str.strip()
         )
+
+    # 5) Merge com Tasa (vinda do Streamlit session_state)
+    tasa_df = st.session_state.get("tasa_df")
+    df = adicionar_tasa_sharepoint(df, tasa_df)
 
     return df
