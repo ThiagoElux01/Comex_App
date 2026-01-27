@@ -185,13 +185,34 @@ def ajustar_sharepoint_df(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].apply(clean_number)
 
-    # 3) DATAS
-    possiveis_nomes_data = [
+
+    # ============================================================
+    # 3) DATAS → criar coluna unificada Fecha_Emision
+    # ============================================================
+    
+    colunas_data_possiveis = [
+        "fecha_de_emisipn_del_documento",
         "fecha_de_emision_del_documento",
         "fecha_emision_documento",
         "fecha",
-        "fecha_de_emisipn_del_documento"
+        "fech_emision",
+        "fechadeemision",
+        "emision"
     ]
+    
+    # identifica a primeira coluna válida
+    col_data_original = None
+    for c in colunas_data_possiveis:
+        if c in df.columns:
+            col_data_original = c
+            break
+    
+    # cria coluna unificada
+    if col_data_original:
+        df["Fecha_Emision"] = df[col_data_original].apply(corrigir_data_sharepoint)
+    else:
+        df["Fecha_Emision"] = ""
+
 
     for col in possiveis_nomes_data:
         if col in df.columns:
