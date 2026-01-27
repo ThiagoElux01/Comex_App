@@ -4,6 +4,7 @@ from io import BytesIO
 import pandas as pd
 import fitz  # PyMuPDF
 from typing import List, Optional
+import streamlit as st
 
 # ✅ Corrija o caminho do import (agora puxa do services.externos_utils)
 # ✅ Corrija o nome da função: adicionar_tip_fac_ext (tudo minúsculo)
