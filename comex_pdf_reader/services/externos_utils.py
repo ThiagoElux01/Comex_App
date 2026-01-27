@@ -1165,8 +1165,7 @@ def merge_pec_fast(df_externos, df_sharepoint):
         "tipo_doc",
         "numero_de_documento",
         "Fecha_Emision",
-        "Tasa_Sharepoint",
-        "Lineaabajo",
+        "Tasa_Sharepoint"
     ]
     colunas_extras = [c for c in colunas_extras if c in df_all.columns]
 
