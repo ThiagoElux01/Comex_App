@@ -8,10 +8,6 @@ import fitz  # PyMuPDF
 import pandas as pd
 
 def _extract_first_page_lines_to_df(pdf_bytes: bytes) -> pd.DataFrame:
-    """
-    Extrai as linhas (spans) da primeira página e retorna DataFrame com a primeira coluna 'Text'
-    e colunas subsequentes 'Col_1', 'Col_2', ...
-    """
     try:
         doc = fitz.open(stream=BytesIO(pdf_bytes), filetype="pdf")
         page = doc.load_page(0)
@@ -33,9 +29,6 @@ def _extract_first_page_lines_to_df(pdf_bytes: bytes) -> pd.DataFrame:
         return pd.DataFrame()
 
 def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Replica a lógica do EXE: No_Liquidacion, CDA, Fecha, Monto (+ limpezas).
-    """
     # ---------------------------
     # Helpers de normalização
     # ---------------------------
@@ -43,9 +36,7 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
         if s is None:
             return ""
         s = str(s)
-        # remove invisíveis comuns
         s = s.replace("\u200b", "").replace("\u00a0", " ")
-        # colapsa múltiplos espaços
         s = re.sub(r"\s+", " ", s)
         return s.strip()
 
@@ -56,47 +47,74 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
         return s.upper()
 
     # ---------------------------
-    # No_Liquidacion
+    # No_Liquidacion (robusta)
     # ---------------------------
-    def extrair_valor(row):
-        texto = _upper_no_accents(row.get("Text", ""))
-        if "NUMERO DE LIQUIDACION" in texto and ":" in texto:
-            parts = texto.split(":", 1)
-            return parts[1].strip() if len(parts) > 1 else ""
-        elif "NÚMERO DE LIQU" in texto or "NUMERO DE LIQU" in texto:
-            return _clean_invisibles(row.get("Col_1", "")) or ""
+    def _looks_like_liq_value(s: str) -> bool:
+        """
+        Valor de No_Liquidacion deve conter dígitos e pelo menos 8 caracteres (ex.: 118-016559-26).
+        Ignora tokens como ':'.
+        """
+        s = _clean_invisibles(s)
+        if not s:
+            return False
+        return bool(re.search(r"\d", s)) and len(s) >= 8
+
+    def extrair_valor(row, next_row=None):
+        texto_raw = row.get("Text", "")
+        texto = _upper_no_accents(texto_raw)
+
+        # Detecta a chave "NÚMERO/NUMERO DE LIQUIDACIÓN"
+        has_liq = ("NUMERO DE LIQUIDACION" in texto) or ("NÚMERO DE LIQUIDACION" in texto) or ("NÚMERO DE LIQUIDACIÓN" in texto)
+        if not has_liq:
+            return ""
+
+        # 1) Procura valor nas colunas atuais (Col_1..Col_4) ignorando apenas ':'
+        for k in ("Col_1", "Col_2", "Col_3", "Col_4"):
+            if k in row:
+                cand = _clean_invisibles(row.get(k, ""))
+                if _looks_like_liq_value(cand):
+                    return cand
+
+        # 2) Procura após ':' na mesma linha
+        m = re.search(r":\s*(.+)$", _clean_invisibles(texto_raw))
+        if m:
+            after_colon = _clean_invisibles(m.group(1))
+            if _looks_like_liq_value(after_colon):
+                return after_colon
+
+        # 3) Fallback: próxima linha (Text e colunas)
+        if next_row is not None:
+            nxt_text_raw = next_row.get("Text", "")
+            nxt_text = _clean_invisibles(nxt_text_raw)
+            if _looks_like_liq_value(nxt_text):
+                return nxt_text
+
+            for k in ("Col_1", "Col_2", "Col_3"):
+                if k in next_row:
+                    cand = _clean_invisibles(next_row.get(k, ""))
+                    if _looks_like_liq_value(cand):
+                        return cand
+
         return ""
 
     # ---------------------------
     # CDA (robusta, com fallback)
     # ---------------------------
     def _looks_like_cda_value(s: str) -> bool:
-        """
-        Aceita valores com dígitos e hífens; ignora isolados como ':'.
-        """
         s = _clean_invisibles(s)
         if not s:
             return False
-        # Deve conter ao menos um dígito e pelo menos 5 caracteres totais
         return bool(re.search(r"\d", s)) and len(s) >= 5
 
     def extrair_valor_cda(row, next_row=None):
-        """
-        Extrai CDA com tolerância:
-          - detecta 'CDA', 'C.D.A', 'C.D.A.' e 'C D A'
-          - lê Col_1..Col_4 se existirem e tiverem dígitos
-          - tenta após ':' na mesma linha
-          - fallback: próxima linha (Text/Col_1..Col_3)
-        """
         texto_raw = row.get("Text", "")
         texto = _upper_no_accents(texto_raw)
 
-        # Detecta o marcador CDA na linha
         has_cda = bool(re.search(r"\bC\.?\s*D\.?\s*A\.?\b", texto))
         if not has_cda:
             return ""
 
-        # 1) Primeiro tenta colunas auxiliares com dígitos (ignora apenas ':')
+        # 1) colunas com dígitos
         for k in ("Col_1", "Col_2", "Col_3", "Col_4"):
             if k in row:
                 cand = _clean_invisibles(row.get(k, ""))
@@ -105,7 +123,7 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
                     out = re.sub(r"\s*-\s*", "-", out)
                     return out
 
-        # 2) Tenta após ':' na mesma linha (cobre 'C.D.A.:', 'C.D.A :', etc.)
+        # 2) após ':' na mesma linha
         m = re.search(r":\s*(.+)$", _clean_invisibles(texto_raw))
         if m:
             after_colon = _clean_invisibles(m.group(1))
@@ -114,7 +132,7 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
                 out = re.sub(r"\s*-\s*", "-", out)
                 return out
 
-        # 3) Fallback: próxima linha (Text e colunas)
+        # 3) próxima linha
         if next_row is not None:
             nxt_text_raw = next_row.get("Text", "")
             nxt_text = _clean_invisibles(nxt_text_raw)
@@ -169,31 +187,31 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
                 out.append("")
         return out
 
-    # Aplicações
-    df["No_Liquidacion"] = df.apply(extrair_valor, axis=1)
-    df["Fecha"] = df.apply(extrair_fecha, axis=1)
-    df["Monto"] = extrair_monto(df)
-
-    # CDA com acesso à linha seguinte (fallback)
+    # Aplicações (agora passando next_row para No_Liquidacion e CDA)
+    liq_vals = []
     cda_vals = []
     for i in range(len(df)):
         row = df.iloc[i].to_dict()
         next_row = df.iloc[i + 1].to_dict() if (i + 1) < len(df) else None
+        liq_vals.append(extrair_valor(row, next_row))
         cda_vals.append(extrair_valor_cda(row, next_row))
+
+    df["No_Liquidacion"] = liq_vals
     df["CDA"] = cda_vals
+    df["Fecha"] = df.apply(extrair_fecha, axis=1)
+    df["Monto"] = extrair_monto(df)
 
     # Limpeza básica
     for col in ["No_Liquidacion", "CDA", "Monto", "Fecha"]:
         df[col] = df[col].apply(lambda x: str(x).strip() if pd.notna(x) else "")
 
-    # Converte Monto → float (usa '.' como decimal após remover ',')
+    # Converte Monto → float
     def to_float(v):
         s = str(v).replace(",", "").strip()
         return round(float(s), 2) if s and s.replace(".", "", 1).isdigit() else None
     df["Monto"] = df["Monto"].apply(to_float)
 
-    # Ajuste do CDA (ex.: "<xx> ... <dddddd>" → "xx-dddddd")
-    # Se você preferir manter o valor completo (ex.: 118-26-10-037272-25-1-01), comente este bloco.
+    # Ajuste do CDA (comente se quiser manter o valor completo)
     def ajustar_cda(v):
         m = re.search(r"\b(\d{2,3})\D+.*?(\d{6,})\b", str(v))
         return f"{m.group(1)}-{m.group(2)}" if m else v
@@ -209,9 +227,6 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def _consolidar_por_arquivo(df_lines: pd.DataFrame) -> pd.DataFrame:
-    """
-    Consolida por Source_File pegando o primeiro valor não vazio de cada campo.
-    """
     dados = []
     for src in df_lines["Source_File"].unique():
         dfa = df_lines[df_lines["Source_File"] == src]
@@ -234,11 +249,6 @@ def process_percepcion_streamlit(
     progress_widget=None,
     status_widget=None,
 ) -> Optional[pd.DataFrame]:
-    """
-    Pipeline Percepciones para Streamlit.
-    Lê PDFs do uploader, aplica as regras e retorna o DataFrame final (sem salvar em disco).
-    Mantém Tasa = 1.00 conforme lógica original do seu EXE.
-    """
     if not uploaded_files:
         return None
 
@@ -264,16 +274,13 @@ def process_percepcion_streamlit(
     df_all = pd.concat(dfs, ignore_index=True)
     df_all = _add_columns(df_all)
 
-    # Consolidação por arquivo
     df_rel = _consolidar_por_arquivo(df_all)
 
-    # Pós-processo (mesma lógica do EXE)
     df_rel["Error"] = df_rel["No_Liquidacion"].apply(
         lambda x: "Can't read the file" if pd.isna(x) or str(x).strip() == "" else ""
     )
     df_rel["Fecha"] = df_rel["Fecha"].astype(str).str.replace("/", "", regex=False)
 
-    # Colunas fixas
     df_rel["Tasa"] = 1.00
     df_rel["COD PROVEEDOR"] = "13131295"
     df_rel["COD MONEDA"] = "00"
@@ -281,7 +288,6 @@ def process_percepcion_streamlit(
     df_rel["Cuenta"] = "421201"
     df_rel["Tipo de Factura"] = "12"
 
-    # Ordem final
     df_rel = df_rel[
         [
             "Source_File",
