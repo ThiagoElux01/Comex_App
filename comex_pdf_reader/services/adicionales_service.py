@@ -89,6 +89,39 @@ def process_adicionales_streamlit(
         progress_widget.progress(100, text="Concluído (Gastos Adicionales).")
     if status_widget:
         status_widget.success("Pipeline Adicionales finalizado.")
-
+        
+    # ------------------------------------------
+    # COMPLEMENTAR CAMPOS VAZIOS (ADICIONALES)
+    # ------------------------------------------
+    def preencher_vazio(dest_col, src_col):
+        if dest_col in df.columns and src_col in df.columns:
+            df[dest_col] = df[dest_col].fillna("").replace("", None)
+            df[src_col] = df[src_col].fillna("").replace("", None)
+            df[dest_col] = df[dest_col].combine_first(df[src_col])
+    
+    # 1) R.U.C ← fornecedor (coluna "proveedor" no SharePoint)
+    preencher_vazio("R.U.C", "proveedor")
+    
+    # 2) Proveedor Iscala ← proveedor
+    preencher_vazio("Proveedor Iscala", "proveedor")
+    
+    # 3) Factura ← numero_de_documento
+    preencher_vazio("Factura", "numero_de_documento")
+    
+    # 4) Tipo Doc ← tipo_doc
+    preencher_vazio("Tipo Doc", "tipo_doc")
+    
+    # 5) Fecha de Emisión ← Fecha_Emision
+    preencher_vazio("Fecha de Emisión", "Fecha_Emision")
+    
+    # 6) Moneda ← moneda
+    preencher_vazio("Moneda", "moneda")
+    
+    # 7) Amount / Op. Gravada ← importe_documento
+    if "Op. Gravada" in df.columns: 
+        preencher_vazio("Op. Gravada", "importe_documento")
+    
+    # 8) Tasa ← Tasa_Sharepoint
+    preencher_vazio("Tasa", "Tasa_Sharepoint")
 
     return df
