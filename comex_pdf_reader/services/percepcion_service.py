@@ -36,7 +36,6 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Replica a lógica do EXE: No_Liquidacion, CDA, Fecha, Monto (+ limpezas).
     """
-
     # ---------------------------
     # Helpers de normalização
     # ---------------------------
@@ -62,7 +61,6 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
     def extrair_valor(row):
         texto = _upper_no_accents(row.get("Text", ""))
         if "NUMERO DE LIQUIDACION" in texto and ":" in texto:
-            # pega o que está à direita dos dois pontos
             parts = texto.split(":", 1)
             return parts[1].strip() if len(parts) > 1 else ""
         elif "NÚMERO DE LIQU" in texto or "NUMERO DE LIQU" in texto:
@@ -72,42 +70,55 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
     # ---------------------------
     # CDA (robusta, com fallback)
     # ---------------------------
+    def _looks_like_cda_value(s: str) -> bool:
+        """
+        Aceita valores com dígitos e hífens; ignora isolados como ':'.
+        """
+        s = _clean_invisibles(s)
+        if not s:
+            return False
+        # Deve conter ao menos um dígito e pelo menos 5 caracteres totais
+        return bool(re.search(r"\d", s)) and len(s) >= 5
+
     def extrair_valor_cda(row, next_row=None):
         """
         Extrai CDA com tolerância:
           - detecta 'CDA', 'C.D.A', 'C.D.A.' e 'C D A'
-          - lê Col_1..Col_3 se existirem
+          - lê Col_1..Col_4 se existirem e tiverem dígitos
           - tenta após ':' na mesma linha
-          - fallback: próxima linha (se o valor estiver abaixo)
+          - fallback: próxima linha (Text/Col_1..Col_3)
         """
-        texto = _upper_no_accents(row.get("Text", ""))
+        texto_raw = row.get("Text", "")
+        texto = _upper_no_accents(texto_raw)
 
         # Detecta o marcador CDA na linha
         has_cda = bool(re.search(r"\bC\.?\s*D\.?\s*A\.?\b", texto))
         if not has_cda:
             return ""
 
-        # 1) Primeiro tenta colunas auxiliares
+        # 1) Primeiro tenta colunas auxiliares com dígitos (ignora apenas ':')
         for k in ("Col_1", "Col_2", "Col_3", "Col_4"):
             if k in row:
                 cand = _clean_invisibles(row.get(k, ""))
-                if cand and cand.strip():
+                if _looks_like_cda_value(cand):
                     out = cand.replace(" ", "")
                     out = re.sub(r"\s*-\s*", "-", out)
                     return out
 
         # 2) Tenta após ':' na mesma linha (cobre 'C.D.A.:', 'C.D.A :', etc.)
-        m = re.search(r":\s*(.+)$", texto)
+        m = re.search(r":\s*(.+)$", _clean_invisibles(texto_raw))
         if m:
-            out = _clean_invisibles(m.group(1))
-            out = out.replace(" ", "")
-            out = re.sub(r"\s*-\s*", "-", out)
-            return out
+            after_colon = _clean_invisibles(m.group(1))
+            if _looks_like_cda_value(after_colon):
+                out = after_colon.replace(" ", "")
+                out = re.sub(r"\s*-\s*", "-", out)
+                return out
 
-        # 3) Fallback: próxima linha
+        # 3) Fallback: próxima linha (Text e colunas)
         if next_row is not None:
-            nxt_text = _clean_invisibles(next_row.get("Text", ""))
-            if nxt_text and not re.search(r"\bC\.?\s*D\.?\s*A\.?\b", _upper_no_accents(nxt_text)):
+            nxt_text_raw = next_row.get("Text", "")
+            nxt_text = _clean_invisibles(nxt_text_raw)
+            if _looks_like_cda_value(nxt_text) and not re.search(r"\bC\.?\s*D\.?\s*A\.?\b", _upper_no_accents(nxt_text)):
                 out = nxt_text.replace(" ", "")
                 out = re.sub(r"\s*-\s*", "-", out)
                 return out
@@ -115,7 +126,7 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
             for k in ("Col_1", "Col_2", "Col_3"):
                 if k in next_row:
                     cand = _clean_invisibles(next_row.get(k, ""))
-                    if cand.strip():
+                    if _looks_like_cda_value(cand):
                         out = cand.replace(" ", "")
                         out = re.sub(r"\s*-\s*", "-", out)
                         return out
@@ -182,6 +193,7 @@ def _add_columns(df: pd.DataFrame) -> pd.DataFrame:
     df["Monto"] = df["Monto"].apply(to_float)
 
     # Ajuste do CDA (ex.: "<xx> ... <dddddd>" → "xx-dddddd")
+    # Se você preferir manter o valor completo (ex.: 118-26-10-037272-25-1-01), comente este bloco.
     def ajustar_cda(v):
         m = re.search(r"\b(\d{2,3})\D+.*?(\d{6,})\b", str(v))
         return f"{m.group(1)}-{m.group(2)}" if m else v
